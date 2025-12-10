@@ -24,12 +24,12 @@ axial-sws-tomography/
 ├── src/
 │   ├── axial_velocity_model.py       # 3D velocity model construction
 │   ├── obs_array.py                  # Ocean bottom seismometer array
-│   ├── earthquake_location.py        # Ray tracing and earthquake location
-│   ├── anisotropy_optimizer.py       # Direct inversion algorithms
-│   ├── seismic_geometry.py          # Back-azimuth and distance calculations
+│   ├── earthquake_location.py        # Ray tracing through velocity models
+│   ├── global_anisotropy_inversion.py # Global linear least-squares inversion
+│   ├── splitting_intensity.py        # Splitting intensity (Chevrot 2000)
+│   ├── inversion_diagnostics.py      # Resolution and uncertainty analysis
 │   ├── get_all_traces.py            # Waveform data retrieval
-│   ├── splitting_functions.py       # Shear-wave splitting analysis
-│   └── visualization.py             # Plotting and visualization utilities
+│   └── splitting_functions.py       # Shear-wave splitting analysis & QC
 ├── swspy/                           # Local shear-wave splitting library
 ├── data/
 │   ├── axial_seamount_stations.csv  # Station coordinates and metadata
@@ -134,15 +134,16 @@ Shear-wave splitting occurs when S-waves propagate through anisotropic media, sp
 - **φ (phi)**: Fast direction azimuth relative to north
 - **δt (dt)**: Time delay between fast and slow arrivals
 
-### Direct Inversion Method
+### Global Linear Least-Squares Inversion
 
-This workflow implements a direct inversion approach:
+This workflow implements a global inversion approach following Nataf (1986) and Chevrot (2000):
 
-1. **Ray Tracing**: Compute ray paths through initial velocity model
-2. **Grid Cell Assignment**: Determine which model cells each ray traverses  
-3. **Data Accumulation**: Weight splitting measurements by uncertainty and accumulate by cell
-4. **Parameter Estimation**: Compute cell-wise weighted averages of splitting parameters
-5. **Model Update**: Update anisotropy structure with data-derived values
+1. **Forward Model**: d = G · m where m = [M_c, M_s] with M_c = A cos(2ψ), M_s = A sin(2ψ)
+2. **Design Matrix G**: Built from isotropic ray path lengths L and sensitivity terms
+3. **Observations d**: Stack φ, δt, and splitting intensity (SI) measurements  
+4. **Regularization**: Spatial smoothing + damping with L-curve parameter selection
+5. **Solution**: Solve (G^T W² G + λ² R^T R) m = G^T W² d
+6. **Recovery**: Anisotropy strength A = √(M_c² + M_s²), fast direction ψ = 0.5 arctan2(M_s, M_c)
 
 ### Geological Context
 
