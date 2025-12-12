@@ -216,15 +216,25 @@ class GlobalAnisotropyInverter:
                     col_mc = 2 * cell_idx      # Mc component
                     col_ms = 2 * cell_idx + 1  # Ms component
                     
+                    # Get velocity for this cell to make G dimensionally correct
+                    # G entries should be Lij/V (seconds) so model is dimensionless
+                    cell_i = cell_idx // (self.ny * self.nz)
+                    remainder = cell_idx % (self.ny * self.nz)
+                    cell_j = remainder // self.nz
+                    cell_k = remainder % self.nz
+                    velocity_cell = self.vm.velocity[cell_i, cell_j, cell_k]  # km/s
+                    
+                    G_entry = Lij / velocity_cell  # Path length / velocity = traveltime (seconds)
+                    
                     # First row contributions
                     rows.extend([row_idx, row_idx])
                     cols.extend([col_mc, col_ms]) 
-                    vals.extend([Lij * c2a * c2p, Lij * s2a * c2p])
+                    vals.extend([G_entry * c2a * c2p, G_entry * s2a * c2p])
                     
                     # Second row contributions
                     rows.extend([row_idx + 1, row_idx + 1])
                     cols.extend([col_mc, col_ms])
-                    vals.extend([Lij * c2a * s2p, Lij * s2a * s2p])
+                    vals.extend([G_entry * c2a * s2p, G_entry * s2a * s2p])
                 
                 row_idx += 2
                 
@@ -363,10 +373,36 @@ class GlobalAnisotropyInverter:
         self.regularization_matrix = R
         
         print("Building weight matrix...")
-        # Weight matrix (inverse uncertainties)
+        # Weight matrix with normalization for different observation types
+        # Splitting observations contribute 2 rows, SI observations contribute 1 row
+        # Normalize so each observation (not row) is weighted equally
+        
+        n_splitting = sum(1 for obs in self.observations if obs['type'] == 'splitting')
+        n_si = sum(1 for obs in self.observations if obs['type'] == 'si')
+        
+        # Base weights from uncertainties
         W_diag = 1.0 / np.maximum(self.uncertainties, 1e-12)
+        
+        # Normalize by observation type
+        # Splitting: 2 rows per observation, so divide by sqrt(2) to normalize
+        # SI: 1 row per observation, keep as is
+        row_idx = 0
+        for obs in self.observations:
+            if obs['type'] == 'splitting':
+                # Two rows for this observation - normalize by sqrt(2)
+                W_diag[row_idx] /= np.sqrt(2.0)
+                W_diag[row_idx + 1] /= np.sqrt(2.0)
+                row_idx += 2
+            elif obs['type'] == 'si':
+                # One row for this observation - no additional normalization needed
+                row_idx += 1
+        
         W = sp.diags(W_diag)
         self.weight_matrix = W
+        
+        print(f"  Splitting observations: {n_splitting} (2 rows each, normalized by √2)")
+        print(f"  SI observations: {n_si} (1 row each)")
+        print(f"  Total data rows: {len(W_diag)}")
         
         # Auto-select regularization parameter if not provided
         if lambda_reg is None:
@@ -517,16 +553,8 @@ class GlobalAnisotropyInverter:
         Ms = self.model_estimate[1::2].reshape(self.nx, self.ny, self.nz)
         
         # Convert to physical parameters
+        # A is dimensionless (fractional velocity difference), no velocity scaling needed
         anisotropy_strength, fast_direction = self.convert_linear_params(Mc, Ms)
-
-        velocity = self.vm.velocity
-        
-        if velocity is None:
-            raise ValueError("Velocity model not initialized. Call vm.create_model() first.")
-        
-        # Formula: A_percent = (δt/L) × V × 100
-        # where anisotropy_strength is currently in s/km
-        anisotropy_strength = anisotropy_strength * velocity * 100.0
         
         return anisotropy_strength, fast_direction
     

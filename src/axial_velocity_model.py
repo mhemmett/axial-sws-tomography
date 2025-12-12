@@ -65,7 +65,7 @@ class AxialVelocityModel:
     def create_model(self, v0_seafloor=2.0, velocity_gradient=0.3,
                     caldera_center=(0.0, 0.0), caldera_width=3.0, caldera_length=8.0,
                     caldera_angle=15.0, magma_chamber_depth=(1.1, 2.3),
-                    mmr_east_offset=0.7):
+                    mmr_east_offset=0.7, target_v_min=2.4, target_v_max=2.9):
         """
         Create Axial Seamount velocity model with geological features based on
         recent seismic tomography and geological studies (Yang et al. 2024, 
@@ -266,7 +266,23 @@ class AxialVelocityModel:
                         if depth <= seafloor_layer_thickness:
                             velocity_3d[i, j, k] = seafloor_velocity
         
+        # Get current min and max
+        v_min_current = velocity_3d.min()
+        v_max_current = velocity_3d.max()
+        
+        # Linear scaling: v_scaled = a * v + b
+        # where: target_v_min = a * v_min_current + b
+        #        target_v_max = a * v_max_current + b
+        scale_factor = (target_v_max - target_v_min) / (v_max_current - v_min_current)
+        offset = target_v_min - scale_factor * v_min_current
+        
+        velocity_3d = scale_factor * velocity_3d + offset
+        
+        # Store the scaled velocity
         self.velocity = velocity_3d
+        
+        print(f"✓ Velocity model scaled to range: {velocity_3d.min():.3f} - {velocity_3d.max():.3f} km/s")
+        
         return velocity_3d
     
     def get_velocity_at_point(self, x, y, z):

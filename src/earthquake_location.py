@@ -231,3 +231,48 @@ class RayTracer:
         travel_time = solver.traveltime.values[rec_idx]
         
         return travel_time
+
+def compute_cell_path_lengths(ray_path, vm):
+    """
+    Compute actual path lengths (km) through each cell from ray coordinates.
+    
+    Parameters:
+    -----------
+    ray_path : np.ndarray
+        Array of shape (npts, 3) with [x, y, z] coordinates in km
+    vm : AxialVelocityModel
+        Velocity model with grid information
+    
+    Returns:
+    --------
+    Lij : dict
+        Dictionary mapping cell_idx -> path_length_km
+    """
+    Lij = {}
+    
+    # Process ray segments between consecutive points
+    for i in range(len(ray_path) - 1):
+        p1, p2 = ray_path[i], ray_path[i+1]
+        
+        # Segment midpoint for cell identification
+        mid = (p1 + p2) / 2.0
+        
+        # Convert to grid indices
+        cell_i = int((mid[0] - vm.x_min) / (vm.x_max - vm.x_min) * (vm.nx - 1))
+        cell_j = int((mid[1] - vm.y_min) / (vm.y_max - vm.y_min) * (vm.ny - 1))
+        cell_k = int((mid[2] - vm.z_min) / (vm.z_max - vm.z_min) * (vm.nz - 1))
+        
+        # Ensure within bounds
+        if (0 <= cell_i < vm.nx and 0 <= cell_j < vm.ny and 0 <= cell_k < vm.nz):
+            cell_idx = cell_i * vm.ny * vm.nz + cell_j * vm.nz + cell_k
+            
+            # Compute segment length in km
+            segment_length = np.linalg.norm(p2 - p1)
+            
+            # Accumulate path length for this cell
+            Lij[cell_idx] = Lij.get(cell_idx, 0.0) + segment_length
+    
+    return Lij
+
+print("✓ Helper function compute_cell_path_lengths() defined")
+print("  Computes actual path lengths (km) from ray coordinates")

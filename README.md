@@ -1,19 +1,21 @@
 # Axial Seamount Shear-Wave Splitting Tomography
 
-A complete workflow for analyzing seismic anisotropy at Axial Seamount through shear-wave splitting tomography using direct inversion methods.
+A complete workflow for analyzing seismic anisotropy at Axial Seamount through shear-wave splitting tomography using global linear least-squares inversion.
 
 ## Overview
 
-This repository provides a comprehensive analysis framework for shear-wave splitting at Axial Seamount, a submarine volcano on the Juan de Fuca Ridge. The workflow implements direct inversion tomography to map subsurface anisotropy structure from observed splitting measurements.
+This repository provides a comprehensive analysis framework for shear-wave splitting at Axial Seamount, a submarine volcano on the Juan de Fuca Ridge. The workflow implements global linear inversion tomography to map 3D subsurface anisotropy structure from observed splitting parameters (φ, δt) and splitting intensity (SI) measurements.
 
 ### Key Features
 
 - **Complete Workflow**: From raw earthquake catalogs to 3D anisotropy models
-- **Quality Control Pipeline**: Automated filtering for signal quality, P-wave rectilinearity, and incidence angles  
-- **Direct Inversion Method**: Data-driven tomographic inversion without iterative optimization
-- **3D Velocity Modeling**: Incorporates realistic geological structures (magma chamber, caldera)
-- **Ray Tracing**: Anisotropic ray path computation through heterogeneous media
-- **Comprehensive Visualization**: 3D plotting of velocity models, ray paths, and splitting parameters
+- **Quality Control Pipeline**: Automated filtering for SNR, P-wave rectilinearity, and incidence angles  
+- **Global Linear Inversion**: Regularized least-squares inversion with proper dimensional analysis
+- **Dual Observation Types**: Combines shear-wave splitting (φ, δt) and splitting intensity (SI) measurements
+- **3D Velocity Modeling**: Realistic geological structures including magma chamber and caldera
+- **Ray Tracing**: PyKonal-based ray path computation through 3D velocity models
+- **Physically Accurate**: Proper path length computation, velocity scaling, and normalized weighting
+- **Comprehensive Visualization**: 3D plots of velocity models, anisotropy structure, and fast direction vectors
 
 ## Repository Structure
 
@@ -97,11 +99,12 @@ The notebook implements the following analysis pipeline:
 2. **Extended Time Window Creation** - Generate proper time windows for waveform analysis
 3. **Waveform Data Retrieval** - Download and organize seismic traces
 4. **Quality Control Pipeline** - Filter data based on SNR, rectilinearity, and geometry
-5. **Shear-Wave Splitting Analysis** - Automated splitting parameter estimation
-6. **3D Velocity Model Construction** - Build realistic velocity structure with geological features
-7. **Ray Tracing** - Compute anisotropic ray paths through the velocity model
-8. **Direct Inversion** - Map splitting measurements to 3D anisotropy structure
-9. **Visualization & Analysis** - Generate comprehensive plots and summaries
+5. **Shear-Wave Splitting Analysis** - Silver & Chan (1991) method with Teanby (2004) clustering
+6. **Splitting Intensity Calculation** - Chevrot (2000) formulation from rotated components
+7. **3D Velocity Model Construction** - Build realistic velocity structure (2.4-2.9 km/s range)
+8. **Ray Tracing** - PyKonal-based path computation through heterogeneous media
+9. **Global Linear Inversion** - Regularized least-squares with proper physical units
+10. **Visualization & Analysis** - 3D plots of anisotropy strength and fast direction patterns
 
 ### Key Parameters
 
@@ -115,50 +118,73 @@ QC_THRESHOLDS = {
     'max_incidence': 30.0,        # Maximum incidence angle (degrees)
     'min_magnitude': 0.0,         # Minimum event magnitude
 }
-
 # Velocity model parameters
 vm = AxialVelocityModel(
-    nx=101, ny=101, nz=51,        # Grid dimensions
-    x_range=(-16.0, 16.0),        # X extent (km)
-    y_range=(-16.0, 16.0),        # Y extent (km)  
-    z_range=(0.0, 10.0)           # Depth range (km)
+    nx=51, ny=51, nz=26,          # Grid dimensions
+    x_range=(-3.0, 3.0),          # X extent (km)
+    y_range=(-3.0, 3.0),          # Y extent (km)  
+    z_range=(0.0, 3.0)            # Depth range (km)
+)
+
+# Regularization parameters
+regularization_params = {
+    'lambda_smooth': 1.0,         # Spatial smoothing weight
+    'lambda_damp': 0.1,           # Damping weight  
+    'smooth_horizontal': 1.0,     # Horizontal smoothing
+    'smooth_vertical': 0.5        # Vertical smoothing
+}   z_range=(0.0, 10.0)           # Depth range (km)
 )
 ```
 
 ## Scientific Background
-
-### Shear-Wave Splitting
-
-Shear-wave splitting occurs when S-waves propagate through anisotropic media, splitting into fast and slow components with different velocities and polarizations. The splitting parameters (φ, δt) characterize:
-
-- **φ (phi)**: Fast direction azimuth relative to north
-- **δt (dt)**: Time delay between fast and slow arrivals
-
 ### Global Linear Least-Squares Inversion
 
+This workflow implements a physically accurate global inversion approach following Nataf (1986) and Chevrot (2000):
+
+1. **Forward Model**: **d** = **G** · **m** where **m** = [M_c, M_s] with M_c = A cos(2ψ), M_s = A sin(2ψ)
+2. **Design Matrix G**: Built from ray path lengths L_ij (km) divided by velocity V (km/s) for dimensional consistency
+   - G entries have units of seconds: L_ij / V
+   - Model parameters m are dimensionless (fractional velocity difference)
+3. **Observations d**: Combined φ, δt, and splitting intensity (SI) measurements  
+   - Splitting: 2 rows per observation with normalized weighting (÷√2)
+   - SI: 1 row per observation with incidence angle sensitivity sin(2θ)
+4. **Regularization**: Spatial smoothing + damping with L-curve parameter selection
+5. **Solution**: Solve (G^T W² G + λ² R^T R) **m** = G^T W² **d**
+6. **Recovery**: Anisotropy strength A = √(M_c² + M_s²), fast direction ψ = 0.5 · arctan2(M_s, M_c)
+   - A is dimensionless (fractional velocity difference, typically 0.01-0.15 for 1-15%)
+   - Only multiply by 100 for percentage display in visualizations
 This workflow implements a global inversion approach following Nataf (1986) and Chevrot (2000):
 
 1. **Forward Model**: d = G · m where m = [M_c, M_s] with M_c = A cos(2ψ), M_s = A sin(2ψ)
 2. **Design Matrix G**: Built from isotropic ray path lengths L and sensitivity terms
-3. **Observations d**: Stack φ, δt, and splitting intensity (SI) measurements  
-4. **Regularization**: Spatial smoothing + damping with L-curve parameter selection
-5. **Solution**: Solve (G^T W² G + λ² R^T R) m = G^T W² d
-6. **Recovery**: Anisotropy strength A = √(M_c² + M_s²), fast direction ψ = 0.5 arctan2(M_s, M_c)
-
-### Geological Context
-
-Axial Seamount provides an ideal natural laboratory for studying volcanic processes and magmatic anisotropy due to:
-
-- Active volcanism and frequent seismicity
-- Well-instrumented with ocean bottom seismometers (OBS)
-- Known geological structure (caldera, magma chamber, lava flows)
-- Previous geophysical studies for validation
-
 ## Results
 
 The analysis produces several key outputs:
 
 ### Splitting Measurements
+- High-quality splitting parameters (φ, δt) for event-station pairs
+- Splitting intensity (SI) measurements from rotated waveforms
+- Comprehensive quality control metrics (SNR, rectilinearity, incidence angle)
+- Statistical uncertainty estimates via clustering
+
+### 3D Anisotropy Model  
+- Anisotropy strength (A) distribution throughout the upper crust (1-15% expected)
+- Fast direction (ψ) patterns showing structural alignment
+- Model resolution and data coverage assessment
+- Regularized solution balancing data fit and smoothness
+
+### Visualization Products
+- 3D scatter plots of anisotropy strength and fast direction
+- Horizontal depth slices with vector field overlays
+- Velocity model slices showing geological features
+- Station locations and ray path coverage
+- Quality control and diagnostic plots
+
+### Technical Improvements
+- **Physical Accuracy**: Proper dimensional analysis with L_ij/V scaling in G matrix
+- **Path Lengths**: Actual ray segment lengths (km) computed from coordinate arrays
+- **Normalized Weighting**: Equal contribution per observation regardless of type
+- **Incidence Angle**: sin(2θ) sensitivity factor for SI observations
 - High-quality splitting parameters for event-station pairs
 - Comprehensive quality control metrics
 - Statistical uncertainty estimates
